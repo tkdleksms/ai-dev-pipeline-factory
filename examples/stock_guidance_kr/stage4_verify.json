@@ -1,0 +1,40 @@
+{
+  "test_matrix": [
+    {"level":"unit","target":"calendar","expected_outcome":"거래일/휴장/반장·장중장후 컷오프 정확"},
+    {"level":"unit","target":"signal.calibrate","expected_outcome":"기본 Platt, min_sample 미달 시 identity+flag(조용한 오보정 없음)"},
+    {"level":"unit","target":"backtest.costs","expected_outcome":"거래세(매도)+수수료+슬리피지 정확 반영"},
+    {"level":"unit","target":"ingestion.dedup","expected_outcome":"url_hash 중복 제거"},
+    {"level":"unit","target":"router","expected_outcome":"valuation→api, 비용캡 초과→local, 둘 다 불가→defer"},
+    {"level":"unit","target":"features","expected_outcome":"feature_frame_schema 컬럼/인덱스/널정책 일치"},
+    {"level":"integration","target":"ingestion tier","expected_outcome":"pykrx↔golden 교차검증, 코퍼레이트액션 시 임계완화, 불일치 quarantine, adjusted/raw 동시저장"},
+    {"level":"integration","target":"sentiment","expected_outcome":"동일입력 동일출력(결정성), 골든셋 정확도 측정·미달 시 참고태그 강등, 수치 생성 0"},
+    {"level":"integration","target":"storage bitemporal","expected_outcome":"정정 append+supersede, knowledge_time<=T 필터가 미래데이터 차단"},
+    {"level":"integration","target":"orchestrator","expected_outcome":"멱등 재실행·재시도≤3·writer 직렬화"},
+    {"level":"e2e","target":"P0 파일럿","expected_outcome":"홀드아웃→P3 실측 재평가, 게이트 충족 시 예측 활성/미달 시 요약 강등"},
+    {"level":"e2e","target":"일배치→대시보드","expected_outcome":"수집→감성→신호→Streamlit 한눈 요약 렌더 + 신뢰도 강등 배지"},
+    {"level":"e2e","target":"텔레그램 인입","expected_outcome":"허용 chat_id 메시지 5분 내 감성 반영, 미허용/스팸 거부·큐"},
+    {"level":"e2e","target":"종목 밸류","expected_outcome":"종목코드→PIT 재무 밸류 카드, 결측 시 사유 표기"},
+    {"level":"adversarial","target":"선언 예외 전수","expected_outcome":"SourceError/StaleCache/LLMTimeout/LLMRepetition/InsufficientSample/BudgetExceeded/NotFound 각 실패경로 테스트 통과"},
+    {"level":"e2e","target":"강등 배지","expected_outcome":"게이트/골든셋/StaleCache 미달 시 '예측 비신뢰' 배지 렌더+예측 비활성, 정상 시 미노출"},
+    {"level":"adversarial","target":"보안 폭발반경0","expected_outcome":"LLM 출력이 자동 실행/주문에 직결 안 됨, 인젝션 텍스트로 제어 탈취 불가, 자격증명 유출 가정 시 영향범위 한정(권한 최소화)"},
+    {"level":"regression","target":"룩어헤드","expected_outcome":"knowledge_time>as_of 데이터 주입 시 테스트 실패(누수 0 보증)"}
+  ],
+  "release_gates": [
+    "파일럿 quantitative_gates(ECE≤0.10, 방향정확도 벤치+3%p p<0.05, OOS≥250일/폴드≥5) 충족 또는 '요약 강등 모드' 확정",
+    "룩어헤드 회귀테스트 통과(누수 0)",
+    "감성 골든셋 정확도 임계 충족 또는 '참고 태그' 강등",
+    "선언된 모든 예외에 실패경로 테스트 존재",
+    "시크릿 노출 0(코드/DB grep) + 백업 제외 확인",
+    "모든 화면/알림에 '투자권유 아님' 면책 고지",
+    "법적: 개인 1인 전용·출력물 외부 미제공인 한 유사투자자문업 해당 없음(게이트 비활성). 가족/지인 알림·공개로 확장 시에만 재검토 트리거. 뉴스 본문 재배포 금지",
+    "고위험 ADR 가정-위배 차단 게이트: 감성 비결정성 발생 시 차단(ADR-003), bitemporal 시간여행 회귀 시 차단(ADR-004), 보안 폭발반경0 적대테스트 통과(ADR-005)"
+  ],
+  "monitoring_plan": [
+    "감성 라벨 분포 드리프트 알림(임계 초과 시 재보정)",
+    "신호 ECE 악화·방향정확도 하락 추적",
+    "일일 API 비용(캡 대비) 추적·초과 알림",
+    "데이터 신선도/StaleCache·pykrx↔golden 교차검증 실패율",
+    "로컬 LLM 모델/버전 변경 감지(결과 PIT 기록 대비)"
+  ],
+  "rollback_plan": "모델·버전 PIT 기록으로 이전 감성/신호 모델 롤백. bitemporal로 데이터 정정 롤백(supersede 해제). 예측 신뢰 하락 시 '요약 강등 모드' 스위치(예측 비활성). 비용캡 초과 시 전면 로컬 폴백. 대시보드는 읽기전용이라 데이터 손상 위험 낮음."
+}

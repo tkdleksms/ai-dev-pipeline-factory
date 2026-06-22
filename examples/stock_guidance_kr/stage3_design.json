@@ -1,0 +1,66 @@
+{
+  "stack_decision": "Python 단일 언어. 대시보드는 Streamlit 기본(개인 1인·로컬·'한눈에 보는'에 최적, 단일 의존성 트리, 차트 한 줄). React/FastAPI 승급은 '실측 트리거'(초당 갱신·다중 패널 동기화·복잡 상호작용) 발생 시에만. 데이터·ML·로컬LLM은 Python(pykrx/OpenDartReader/ollama-python/pandas).",
+  "feature_frame_schema": {
+    "index": "MultiIndex(ticker:str, as_of_date:date KST)",
+    "columns": "sentiment_score:float[-1,1], sentiment_conf:float, ret_1d/ret_5d/ret_20d:float, vol_20d:float, volume_z:float, mkt_breadth:float",
+    "keys": "restatement_version:int, knowledge_time:datetime(누수 차단 기준)",
+    "null_policy": "결측은 NaN 유지+플래그, 전진보간 금지(누수). 룩어헤드 회귀테스트: knowledge_time>as_of 데이터 참조 시 실패",
+    "note": "features→signal→backtest→valuation 공용 데이터 계약(critical fix)"
+  },
+  "modules": [
+    {"name":"calendar","files":["calendar/krx_calendar.py"],"key_tests":["test_next_trading_day_skips_holiday","test_intraday_cutoff_maps_next_day","test_half_day"],"implementation_notes":"KRX 거래일/휴장/반장, KST, as-of 컷오프(장중/장후)"},
+    {"name":"ingestion","files":["ingestion/prices.py","ingestion/financials.py","ingestion/news.py","ingestion/telegram_in.py","ingestion/dedup.py","ingestion/sources.py"],"key_tests":["test_prices_pit_stamp","test_adjusted_and_raw_both_stored","test_corp_action_relaxes_crosscheck","test_crosscheck_mismatch_quarantined","test_news_urlhash_dedup","test_telegram_chatid_allowlist_reject"],"implementation_notes":"소스 tier: pykrx=편의 보조, 정식/유료 API(증권사 OpenAPI 등)=golden 기준선. adjusted+raw 둘 다 저장. 코퍼레이트액션(배당락·분할·증자) 인지 시 교차검증 임계 동적완화, 불일치는 폐기 아닌 quarantine+검토큐+출처 PIT 기록. 종가 T+1 재확정 잡(정정 반영). 멱등키"},
+    {"name":"sentiment","files":["sentiment/local_llm.py","sentiment/prompts.py","sentiment/goldenset_eval.py"],"key_tests":["test_sentiment_score_range","test_determinism_same_input_same_output","test_no_repetition_loop","test_no_model_generated_numbers","test_prompt_injection_no_control"],"implementation_notes":"Ollama 한국어. 완전 결정화: temperature=0, seed 고정, top_p/top_k 명시, repeat_penalty+num_predict. 모델명+양자화+버전 결과에 PIT 기록(drift추적). 투입 전 골든 라벨셋(한국 금융 뉴스 수백건)으로 정확도/F1 측정+사전식 baseline 비교, 미달 시 감성을 '참고 태그'로 강등. 요약은 추출형(원문 인용)·수치는 모델 생성 금지(원문 파싱)·근거 스팬 첨부"},
+    {"name":"features","files":["features/builder.py"],"key_tests":["test_pit_alignment_no_lookahead","test_feature_schema_matches_contract"],"implementation_notes":"feature_frame_schema 준수. knowledge_time 기준 as-of 조인"},
+    {"name":"router","files":["router/hybrid.py","router/budget.py"],"key_tests":["test_route_valuation_to_api","test_budget_exceed_forces_local","test_both_unavailable_defers"],"implementation_notes":"매핑표: valuation·market_synthesis→API, else local. 비용 단위=일일 토큰비용(storage 영속), 윈도우=KST 자정. local·api 둘 다 불가면 defer(큐)"},
+    {"name":"signal","files":["signal/model.py","signal/calibrate.py","signal/position.py"],"key_tests":["test_calibration_min_sample_guard","test_platt_default","test_position_weight_bounds"],"implementation_notes":"방향 분류 확률→강도. calibrate(prob,method='platt'|'isotonic'): 기본 platt(소표본 개인용), min_sample 미달 시 identity+미보정 플래그(조용한 오보정 금지). 확률→포지션(한도룰)"},
+    {"name":"backtest","files":["backtest/walkforward.py","backtest/costs.py","backtest/pilot.py"],"key_tests":["test_walkforward_no_leakage","test_costs_applied","test_pilot_gate_uses_quantitative_gates"],"implementation_notes":"walk-forward OOS. 비용모델 파라미터: 거래세(매도)·수수료·슬리피지·체결지연. pilot_gate는 stage2 quantitative_gates(ECE≤0.10, 방향정확도 벤치+3%p p<0.05, OOS≥250일/폴드≥5, BH보정) 입력. P0=홀드아웃/합성, P3=실측 재평가"},
+    {"name":"valuation","files":["valuation/financials_value.py","valuation/llm_reason.py"],"key_tests":["test_missing_data_returns_reason","test_relative_multiples","test_dcf_bounds"],"implementation_notes":"DART PIT 재무→상대가치/간이 DCF. 고도해석 API(router). LLM은 해석만, 수치는 재무에서 계산"},
+    {"name":"telegram","files":["telegram/bot.py","telegram/review_queue.py"],"key_tests":["test_numeric_chatid_allowlist","test_spam_dedup_to_queue","test_no_command_execution"],"implementation_notes":"숫자 chat_id 화이트리스트. 봇 토큰은 macOS Keychain. 무상태 조회만, 주문성/쓰기 명령 금지. 인입 검토 큐, 일일 브리핑"},
+    {"name":"dashboard","files":["dashboard/app.py (Streamlit)"],"key_tests":["test_market_summary_render","test_unreliable_badge_when_gate_fail"],"implementation_notes":"Streamlit 한눈 요약: 방향 게이지(강도+%+신뢰도), 단/중기 카드, 감성추세, 종목 밸류 카드, 백테스트 리포트+드릴다운. localhost 바인딩+Host헤더 검증. 게이트 미충족 시 '예측 비신뢰' 배지+예측 비활성"},
+    {"name":"storage","files":["storage/db.py","storage/schema.sql"],"key_tests":["test_pk_constraints","test_bitemporal_supersede","test_knowledge_time_filter_blocks_future"],"implementation_notes":"SQLite WAL+busy_timeout, 단일 writer 직렬화(수집 큐), 대시보드/DuckDB는 읽기전용. bitemporal(valid_time, knowledge_time) — 정정 시 새 행 append+이전 supersede(풀스냅샷 금지). PIT 쿼리는 knowledge_time<=T로 누수 구조 차단"},
+    {"name":"orchestrator","files":["orchestrator/pipeline.py"],"key_tests":["test_idempotent_rerun","test_retry_max3","test_writer_serialized"],"implementation_notes":"수집→감성→피처→신호→알림 일배치, 멱등·재시도, writer 직렬화"},
+    {"name":"monitoring","files":["monitoring/metrics.py"],"key_tests":["test_drift_alert_rule","test_cost_cap_alert","test_sentiment_label_drift"],"implementation_notes":"분포 드리프트·비용·ECE 악화·감성 라벨 분포 이동 알림, 재보정 트리거"}
+  ],
+  "interface_contracts": [
+    {"caller":"orchestrator","callee":"ingestion.fetch_prices","signature":"fetch_prices(codes:list[str], date:date)->DataFrame[index=(code,date), cols=open,high,low,close,adj_close,volume,source,ingested_at]","error_modes":["SourceError(timeout=10s, retry<=3)","StaleCache(>임계 → degraded 배지)"]},
+    {"caller":"orchestrator","callee":"sentiment.score_sentiment","signature":"score_sentiment(texts:list[str])->list[{score:float[-1,1], label:str, conf:float, evidence_span:str, model_version:str}]","error_modes":["LLMTimeout","LLMRepetition(차단)"]},
+    {"caller":"signal","callee":"signal.calibrate","signature":"calibrate(prob:float, method:'platt'|'isotonic'='platt')->pct:float[0,100]","error_modes":["NotFitted","InsufficientSample→identity+flag"]},
+    {"caller":"backtest","callee":"backtest.pilot_gate","signature":"pilot_gate(metrics:{accuracy,excess_vs_bench,p_value,ece,n_oos,folds})->{pass:bool, reasons:list[str]}","error_modes":["InsufficientSample"]},
+    {"caller":"router","callee":"router.route","signature":"route(task:str)->'local'|'api'|'defer'","error_modes":["BudgetExceeded→force_local","BothUnavailable→defer"]},
+    {"caller":"dashboard","callee":"storage.select","signature":"select(entity:str, filter:dict, knowledge_time:datetime)->list[row(schema=data_schema)]","error_modes":["NotFound→빈결과+사유"]}
+  ],
+  "design_adrs": [
+    {"decision":"대시보드 스택 = Streamlit 기본(단일 Python), React/FastAPI는 실측 트리거 시 승급","rationale":"개인 1인·로컬·한눈 시각화엔 React SPA가 과설계(빌드체인·2언어). Streamlit은 차트 한 줄, 단일 의존성","alternatives":"React+FastAPI(승급 트리거 충족 시), Next.js(JS·Python 브리지 필요)","high_risk":true,"highrisk_verdict":"revise→적용(Streamlit 전환)"},
+    {"decision":"시세 소스 tier: 정식/유료 API=golden 기준, pykrx=편의 보조 + adjusted/raw 동시저장 + 코퍼레이트액션 인지 교차검증(불일치 quarantine)","rationale":"pykrx는 비공식 스크래퍼(불안정·약관·정확성 리스크) → 단일 실패점화 금지","alternatives":"pykrx 단독(취약), 유료 단독(비용)","high_risk":true,"highrisk_verdict":"revise→적용"},
+    {"decision":"로컬LLM=Ollama 한국어, 완전 결정화(temp=0·seed·top_p/k) + 투입 전 골든셋 검증, 미달 시 '참고 태그' 강등, 요약 추출형·수치 생성 금지","rationale":"한국어 금융 감성 성능 미검증 가정·비결정성은 PIT/재현성 붕괴","alternatives":"디코딩만 고정(불충분), 전량 API(비용)","high_risk":true,"highrisk_verdict":"revise→적용"},
+    {"decision":"저장=SQLite WAL+단일writer 직렬화+읽기전용 분리, bitemporal(valid_time,knowledge_time) 정정 append(풀스냅샷 금지)","rationale":"단일 writer 한계·풀스냅샷 폭증·PIT 누수 방지","alternatives":"Postgres(과함), Parquet 단독(트랜잭션 약)","high_risk":true,"highrisk_verdict":"accept(완화책 포함)"},
+    {"decision":"보안=폭발반경 0: LLM 출력 자동실행 금지(human-in-loop)+JSON enum 스키마 강제, 텔레그램 숫자 chat_id allowlist, 시크릿 macOS Keychain, 대시보드 Host헤더 검증+백업 제외","rationale":"프롬프트 인젝션 완전차단 불가 → 영향범위 최소화로 재정의","alternatives":"'격리'만 신뢰(과신)","high_risk":true,"highrisk_verdict":"revise→적용"},
+    {"decision":"신호=방향 분류+확률 캘리브레이션(기본 Platt)→퍼센트, 감성+가격 결합","rationale":"회귀 허위정밀 회피, 소표본 개인용엔 Platt","alternatives":"회귀 점추정, isotonic(대표본 필요)","high_risk":false},
+    {"decision":"하이브리드 라우팅=규칙기반+일일 토큰 비용캡(영속)+defer 폴백","rationale":"비용 최소화 가드레일+종단 폴백","alternatives":"전량 API/전량 로컬","high_risk":false}
+  ],
+  "implementation_order": [
+    "P0 파일럿: ingestion(소표본)+sentiment(골든셋 검증)+features+pilot_gate(홀드아웃) → 가설 정량 검증. 미통과 시 예측 범위 축소",
+    "P1 storage(bitemporal 스키마)+calendar+ingestion(tier·교차검증·멱등)",
+    "P2 sentiment(결정화·골든셋)+features(feature_frame)",
+    "P3 signal(분류·calibrate·position)+backtest(walk-forward·비용)+pilot_gate 실측 재평가",
+    "P4 valuation(DART+API)",
+    "P5 telegram(chat_id allowlist·Keychain)+dashboard(Streamlit 한눈 요약)",
+    "P6 monitoring(드리프트·비용)+통합 검증"
+  ],
+  "definition_of_done": [
+    "각 모듈 key_tests 통과(실행 로그 증거)",
+    "선언된 모든 예외(SourceError/StaleCache/LLMTimeout/LLMRepetition/InsufficientSample/BudgetExceeded/NotFound)마다 실패경로 테스트 1개 이상",
+    "룩어헤드 회귀테스트 통과(knowledge_time>as_of 주입 시 실패) = 누수 0",
+    "감성 골든셋 정확도 임계 충족 또는 '참고 태그'로 강등 동작 확인",
+    "파일럿 quantitative_gates 충족 시에만 예측 활성, 미달 시 요약 강등 동작",
+    "백테스트 리포트에 비용반영 수익·ECE·p값 표기",
+    "Streamlit 한눈 요약 위젯 렌더 + 신뢰도 강등 배지 동작",
+    "시크릿 Keychain/.env 외 노출 0(코드/DB grep), 백업 제외 확인"
+  ],
+  "code_skeletons": [
+    "signal/calibrate.py: def calibrate(prob: float, method: str='platt') -> float: # min_sample 미달 시 identity+flag, returns pct[0,100]",
+    "backtest/pilot.py: def pilot_gate(metrics: dict) -> dict: # quantitative_gates 평가, {'pass':bool,'reasons':[...]}",
+    "router/hybrid.py: API_TASKS={'valuation','market_synthesis'}; def route(task)->str: return 'api' if task in API_TASKS and budget_ok() else ('local' if local_ok() else 'defer')"
+  ]
+}

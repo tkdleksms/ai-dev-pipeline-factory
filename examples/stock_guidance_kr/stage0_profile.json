@@ -1,0 +1,52 @@
+{
+  "project_slug": "stock_guidance_kr",
+  "project_name": "한국주식 투자 가이던스 (개인용)",
+  "idea_summary": "Mac Studio 로컬 LLM + 외부 API 하이브리드로 한국 주식(코스피/코스닥)의 실시간 뉴스 감성을 분석하고, 텔레그램 입력까지 반영해 시장 방향(단기 1일~1주, 중기 ~1달)을 강도·퍼센트로 평가하며, 종목 입력 시 기업분석·밸류에이션을 제공하는 개인용 로컬 대시보드.",
+  "project_category": "local_web_dashboard + data_pipeline + ai_agent (hybrid)",
+  "risk_tier": "high",
+  "autonomy_level": "mid",
+  "target_users": "개인(본인) 1인 — 로컬에서만 사용, 투자 권유 아님(면책)",
+  "domain_hints": [
+    "한국 주식 (코스피/코스닥)",
+    "한국어 뉴스 감성분석 (KO NLP)",
+    "로컬 LLM on Mac Studio (Ollama / MLX, Apple Silicon)",
+    "하이브리드 추론 (Opus / Gemini API = 고도 추론)",
+    "백테스트 / walk-forward / 룩어헤드 바이어스 방지",
+    "DART 재무 데이터 / 시세 API",
+    "텔레그램 봇 입력",
+    "기업 밸류에이션 (DCF/상대가치)",
+    "대시보드 (웹 권장 — 로컬 구동 용이)"
+  ],
+  "key_decisions": {
+    "market": "한국 주식만 (코스피/코스닥)",
+    "users": "개인 1인 (로컬 전용)",
+    "llm_split": "기본 로컬(대량 감성·요약), 고도 추론(밸류·시장종합)만 Opus/Gemini API",
+    "success_metric": "매일 신호/요약 제공 + 신호 적중률 백테스트 정량 검증 (둘 다)",
+    "platform": "웹 대시보드 권장 (로컬 구동·개발 용이) — Stage 1에서 확정",
+    "telegram": "사용자 텔레그램 메시지를 감성 입력에 추가 (핵심 인입 채널 — 내가 본 뉴스/팁을 던지면 자동 반영)",
+    "news_data": "혼합 — RSS 공개피드 기본 + 필요시 공식 뉴스 API 보강",
+    "backtest_groundtruth": "Stage 1에서 확정. 기본 제안: 다음 거래일 등락 방향 일치(주 지표) + walk-forward 검증으로 룩어헤드 방지"
+  },
+  "outputs": {
+    "market_direction": "단기(1일~1주)·중기(~1달) 상승/하락을 강도 + 퍼센트로 표현",
+    "stock_analysis": "종목 입력 시 기업분석 → 밸류에이션"
+  },
+  "concreteness": {
+    "initial_score": 48,
+    "final_score": 73,
+    "rounds": 2,
+    "threshold": 70,
+    "auto_proceeded": false,
+    "assumptions_filled": []
+  },
+  "knowledge_recall": [
+    "_knowledge/pages/ollama-repetition-loop.md — 로컬 LLM 무한반복 완화(maxOutputTokens+frequencyPenalty), Mac Studio 로컬 감성분석에 적용"
+  ],
+  "open_risks": [
+    "데이터 소스 합법성/실시간성 (뉴스 크롤링 vs 공식 API vs RSS) — Stage 1 확정 필요 [고위험]",
+    "백테스트 정답(ground truth) 정의 + walk-forward 적용 — 성공기준 신뢰성의 핵심",
+    "시장 방향 '퍼센트' 예측의 과적합·소표본 한계 (신뢰구간·면책 표기 필요)",
+    "로컬 한국어 감성 모델 선택·성능",
+    "투자 자문 규제/면책: 개인용·비공개로 한정해 리스크 최소화"
+  ]
+}

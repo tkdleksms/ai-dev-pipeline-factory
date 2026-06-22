@@ -1,0 +1,54 @@
+{
+  "project": "한국주식 투자 가이던스 (개인용, 로컬 우선 하이브리드 LLM)",
+  "goals": [
+    "한국 주식(코스피/코스닥) 시장 방향을 단기(1일~1주)·중기(~1달)로 산출. 1차 산출은 '방향(상승/하락)+확률'이며, '퍼센트'는 분류 확률의 캘리브레이션으로 파생(점추정 회귀의 허위정밀 회피)",
+    "예측 피처는 '뉴스 감성 + 가격/거래량/변동성' 결합을 기본 가설로 한다(감성 단독 금지)",
+    "본구현 착수 전 파일럿 실험으로 가설을 정량 임계로 1차 검증하고 통과 시에만 확장",
+    "Mac Studio 로컬 LLM으로 한국어 감성/요약을 대량 처리, 고도추론(밸류·시장종합)만 Opus/Gemini API",
+    "텔레그램 인입(뉴스/팁) 자동 반영 + 스팸/신뢰도 검토",
+    "종목 입력 시 DART 재무 기반 기업분석→밸류에이션",
+    "신호 적중률을 walk-forward out-of-sample로 검증(거래비용 포함)",
+    "로컬 웹 대시보드(개인 1인, 투자권유 아님 면책)"
+  ],
+  "success_criteria": [
+    "방향 정확도: walk-forward OOS에서 다음 거래일 지수(KOSPI/KOSDAQ) 종가 방향 정확도가 buy&hold·랜덤 대비 통계적 우위(부트스트랩/Diebold-Mariano p<0.05)",
+    "파일럿 게이트(정량): 결합 피처가 감성단독·벤치마크 대비 방향정확도 +3%p 이상 & p<0.05 & 최소 표본 확보(잠정: OOS ≥ 250 거래일/폴드 ≥ 5) — Stage 2에서 수치 확정",
+    "수익 검증: 확률→포지션 규칙으로 만든 단순전략의 위험조정수익(Sharpe)이 거래세·수수료·슬리피지 반영 후 buy&hold 대비 우위",
+    "미달 시: '예측 비신뢰'로 명시하고 뉴스 요약·감성 추세 열람 기능만 제공(정직한 강등 폴백)"
+  ],
+  "components": [
+    {"name": "data_ingestion", "purpose": "시세(1차 pykrx, rate-limit/캐시/일배치/수정주가, 폴백 KRX·유료, pykrx↔폴백 샘플 교차검증), DART 재무(공시일 point-in-time), 뉴스(RSS+필요시 API, 발행시각 기록·중복제거), 텔레그램 인입(신뢰도 태깅)"},
+    {"name": "local_sentiment_engine", "purpose": "Mac Studio 로컬 LLM(Ollama/MLX) 한국어 감성 점수화·요약. 무한반복 완화(maxOutputTokens+frequencyPenalty) 적용 — _knowledge/ollama-repetition-loop"},
+    {"name": "feature_builder", "purpose": "감성 + 가격/거래량/변동성 결합 피처 생성, point-in-time 정렬(룩어헤드 방지)"},
+    {"name": "hybrid_reasoning_router", "purpose": "밸류에이션·시장종합만 API, 그 외 로컬. 일일 API 비용캡 + 초과 시 로컬 강제 폴백"},
+    {"name": "signal_engine", "purpose": "결합 피처 → 방향 분류 확률 → 강도; 확률 캘리브레이션으로 퍼센트 파생; 확률→포지션 사이징·진입/청산 규칙 포함"},
+    {"name": "pilot_experiment", "purpose": "본구현 전 가설검증(감성단독 vs 결합, 벤치마크 대비) — 정량 임계 통과 게이트"},
+    {"name": "backtest_engine", "purpose": "walk-forward OOS, 벤치마크 대비, 최소표본·다중검정 보정, 수정주가·point-in-time, 한국 거래세+수수료+슬리피지 비용 모델"},
+    {"name": "stock_valuation", "purpose": "DART point-in-time 재무 + API 추론으로 상대가치/DCF"},
+    {"name": "telegram_bot", "purpose": "사용자 메시지 인입(스팸·중복·종목오태깅 검토 큐) + 일일 신호 알림"},
+    {"name": "dashboard_web", "purpose": "로컬 웹 대시보드 — '한눈에 보는' 시각화 우선: 시장방향 게이지(강도+%·신뢰도), 단/중기 요약 카드, 감성 추세 차트, 종목 밸류 카드, 백테스트 성과 리포트. 기능별 위젯을 한 화면 요약 + 드릴다운"},
+    {"name": "storage", "purpose": "SQLite/DuckDB, 뉴스·시세·신호·백테스트 결과 point-in-time 저장"},
+    {"name": "orchestrator", "purpose": "수집→감성→피처→신호→알림 스케줄링, 재시도·멱등성"},
+    {"name": "monitoring", "purpose": "감성/신호 성능 드리프트·비용 모니터링, 재보정 트리거"}
+  ],
+  "decisions": [
+    {"decision": "백테스트 1차 정답=다음 거래일 지수 종가 방향 + walk-forward OOS, 퍼센트는 확률 캘리브레이션으로 파생", "rationale": "분류로 단순화·검증가능, 회귀 허위정밀 회피"},
+    {"decision": "피처는 감성+가격/거래량/변동성 결합 + 착수 전 정량 파일럿 게이트", "rationale": "감성 단독 ≈랜덤 연구결과 반영, 달성가능성 사전 검증"},
+    {"decision": "확률→거래 변환층(포지션 사이징·진입/청산) + 거래세·수수료·슬리피지 비용 모델 포함", "rationale": "방향정확도가 비용 후 Sharpe 우위로 이어지는지 검증 가능하게"},
+    {"decision": "시세 1차 소스 pykrx(개인용 저빈도·MIT) + rate-limit/캐시/폴백 + 공식소스 교차검증", "rationale": "개인용 적합, 차단·정확성 리스크를 캐시·폴백·교차검증으로 완화"},
+    {"decision": "라우팅=밸류·시장종합만 API + 일일 비용캡 + 초과 시 로컬 폴백", "rationale": "비용 최소화 목표를 가드레일로 실현"},
+    {"decision": "point-in-time: 뉴스 발행시각→거래일 컷오프(장중/장후), DART 공시일 기준", "rationale": "백테스트 누수(과대평가) 방지"},
+    {"decision": "본구현 전 법적 사전확인(유사투자자문업/저작권), 개인 비공개 전제", "rationale": "규제 리스크 근거 확보 후 진행"},
+    {"decision": "플랫폼=로컬 웹 대시보드(스택은 Stage 2/3 소스확인 후 확정)", "rationale": "단일 사용자·개발 용이"},
+    {"decision": "저장=로컬 임베디드 DB(SQLite/DuckDB)", "rationale": "개인·로컬·시계열 적합"}
+  ],
+  "open_questions": [
+    "파일럿/백테스트 정량 임계 최종 확정(방향정확도 %p, 유의수준, OOS 최소 표본·폴드 수, 다중검정 보정 방식)",
+    "확률→포지션 변환 규칙 구체화(사이징·진입/청산·거래빈도)",
+    "백테스트 거래비용 가정 수치(한국 거래세·수수료·슬리피지)",
+    "로컬 한국어 금융 감성모델 선정 + 정확도 측정 라벨셋 확보(실패 시 약지도/사건연구 대안)",
+    "확률 캘리브레이션 기법(Platt/Isotonic) 선택",
+    "일일 API 비용캡 금액 및 로컬 폴백 품질 하한",
+    "법적 사전확인 결과에 따른 기능 범위 조정"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "overall_verdict": "revise → must_fix 전부 설계에 반영(적용 완료)",
+  "reviews": [
+    {"decision":"스택 React+FastAPI","verdict":"revise","applied":"Streamlit 기본으로 전환, React 승급은 실측 트리거 시. (단순성·1언어)"},
+    {"decision":"시세 pykrx 1차","verdict":"revise","applied":"정식/유료 API=golden, pykrx=보조. adjusted/raw 동시저장, 코퍼레이트액션 인지 교차검증, 불일치 quarantine, 종가 T+1 재확정"},
+    {"decision":"로컬LLM Ollama 감성","verdict":"revise","applied":"완전 결정화(temp0·seed·top_p/k), 골든셋 사전검증→미달 시 '참고 태그' 강등, 요약 추출형·수치 생성 금지, 모델버전 PIT 기록"},
+    {"decision":"SQLite PIT","verdict":"accept","applied":"WAL+busy_timeout+단일writer 직렬화+읽기전용 분리, bitemporal append(풀스냅샷 금지)"},
+    {"decision":"보안 경계","verdict":"revise","applied":"폭발반경0(LLM 출력 자동실행 금지+JSON enum), 텔레그램 숫자 chat_id allowlist, 시크릿 macOS Keychain, 대시보드 Host헤더 검증+백업제외"}
+  ],
+  "stage3_critique": {
+    "score": 7,
+    "applied_fixes": [
+      "feature_frame 정규 스키마 신설(critical)",
+      "pilot_gate 임계=stage2 quantitative_gates 연결(critical)",
+      "interface_contracts에 success-path 반환 스키마 추가(major)",
+      "calibrate: 기본 Platt+min_sample 가드+미달 시 identity 플래그(major)",
+      "DoD에 선언 예외별 실패경로 테스트 의무화(major)",
+      "route 비용 단위/윈도우 정의+defer 종단 폴백(minor)"
+    ]
+  }
+}

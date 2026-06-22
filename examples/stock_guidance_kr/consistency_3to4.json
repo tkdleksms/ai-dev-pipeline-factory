@@ -1,0 +1,10 @@
+{
+  "audit": "3->4 (Code Design vs Verification Plan)",
+  "score": 7,
+  "blockers_as_warnings": [
+    {"issue":"강등배지 노출 검증 테스트 부재","status":"반영(e2e '강등 배지' 추가)"},
+    {"issue":"보안 '폭발반경0'이 '시크릿0'으로 축소 매핑","status":"반영(adversarial '보안 폭발반경0' 테스트 추가)"},
+    {"issue":"고위험 ADR 가정-위배 게이트 누락","status":"반영(release_gate에 ADR-003/004/005 가정-위배 차단 추가)"}
+  ],
+  "note": "Stage 4 blocker는 경고 수준이나 저비용으로 전부 보강 반영함."
+}

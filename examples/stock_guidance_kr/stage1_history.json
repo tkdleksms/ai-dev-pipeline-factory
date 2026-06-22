@@ -1,0 +1,35 @@
+{
+  "stage": 1,
+  "tci_rounds": [
+    {
+      "round": 1,
+      "critic_score": 6,
+      "is_passing": false,
+      "key_findings": [
+        "critical: 백테스트 정답 정의가 decisions↔open_questions 자기모순(순환의존)",
+        "critical: 감성 단독 시장방향 예측 달성가능성 미검증(연구상 ≈50%), 감성+시세 결합 누락",
+        "major: 시세 소스 미확정(pykrx 스크레이퍼 리스크)",
+        "major: 하이브리드 라우터 비용캡/규칙 부재",
+        "major: 룩어헤드 방지가 선언적(point-in-time 부재)"
+      ]
+    },
+    {
+      "round": 2,
+      "critic_score": 8,
+      "is_passing": true,
+      "resolved": [
+        "백테스트 정답=다음 거래일 지수 종가 방향(외생·관측가능)으로 전환 → 순환의존 해소",
+        "감성 단독 금지 + 결합 가설 + 정량 파일럿 게이트 3중 장치",
+        "point-in-time(뉴스 발행시각 컷오프, DART 공시일, 수정주가) 컴포넌트 횡단 반영",
+        "비용캡+로컬 폴백, 검증 실패 시 요약기능 강등 폴백 내장"
+      ],
+      "folded_into_final": [
+        "파일럿 게이트 정량 임계(+3%p, p<0.05, OOS≥250일/폴드≥5 잠정)",
+        "확률→포지션 변환층 + 한국 거래세·수수료·슬리피지 비용 모델",
+        "pykrx↔공식소스 교차검증"
+      ]
+    }
+  ],
+  "final_score": 8,
+  "exit_reason": "critic score >= 8"
+}

@@ -1,0 +1,86 @@
+{
+  "prd": {
+    "product_goal": "개인용 한국주식(코스피/코스닥) 투자 가이던스. 매일 시장 방향(단기 1일~1주·중기 ~1달)을 '방향+확률'로 산출하고 확률 캘리브레이션으로 퍼센트를 파생, 종목 입력 시 DART 재무 기반 밸류에이션, 신호는 walk-forward 백테스트(거래비용 포함)로 검증, '한눈에 보는' 로컬 웹 대시보드로 제공. 투자권유 아님(면책).",
+    "functional_requirements": [
+      "FR1 데이터 수집: 시세(pykrx, 수정주가, rate-limit/캐시, 폴백·교차검증), DART 재무(공시시각 point-in-time), 뉴스(RSS+필요시 API, 발행시각·중복제거), 텔레그램 인입(허용발신자·신뢰도 태깅)",
+      "FR2 로컬 한국어 감성 분석·요약(Ollama/MLX), 디코딩 파라미터 고정(반복 페널티·max tokens·timeout)",
+      "FR3 결합 피처(감성+가격/거래량/변동성), point-in-time 정렬",
+      "FR4 하이브리드 라우팅: 밸류·시장종합만 API, 그외 로컬, 일일 비용캡+초과 시 로컬 폴백",
+      "FR5 시장 방향 신호(방향+확률+강도, 캘리브레이션 퍼센트, 단/중기)",
+      "FR6 확률→포지션 변환 + walk-forward 백테스트(거래세·수수료·슬리피지)",
+      "FR7 파일럿 게이트 실험(감성단독 vs 결합, 정량 임계)",
+      "FR8 종목 밸류에이션(DART PIT + API 추론, 상대가치/DCF)",
+      "FR9 텔레그램 봇(허용발신자 화이트리스트, 인입 검토 큐 + 일일 알림)",
+      "FR10 대시보드: 한눈 요약(시장방향 게이지=강도+%+신뢰도, 단/중기 카드, 감성추세 차트, 종목 밸류 카드, 백테스트 리포트) + 드릴다운",
+      "FR11 모니터링(드리프트·비용), 재보정 트리거"
+    ],
+    "non_functional_requirements": [
+      "NFR1 로컬 우선·일일 API 비용캡 = 잠정 ₩10,000/일(또는 토큰 환산), 초과 시 전면 로컬 폴백",
+      "NFR2 point-in-time 정합성: 룩어헤드 차단 회귀테스트(미래데이터 주입 시 실패) 통과 = 누수 0 검증",
+      "NFR3 데이터 정확성: pykrx↔공식소스 샘플 교차검증 허용오차 ≤0.1%, 주간 1회",
+      "NFR4 장애복구: 수집·파이프라인 멱등키 + 재시도 ≤3, 소스 차단 시 폴백",
+      "NFR5 면책·법적: 투자권유 아님 고지, 개인 1인 비공개(외부 배포·타인 알림 금지), 본구현 전 자본시장법(유사투자자문)·데이터 약관 검토",
+      "NFR6 성능: 일배치 감성 처리량 ≥ 2,000 기사/시간(Mac Studio 로컬, 잠정)",
+      "NFR7 비밀관리: API 키·봇 토큰은 .env(코드/DB 저장 금지), 회전 가능",
+      "NFR8 보안: 텔레그램 허용발신자 화이트리스트, 대시보드 localhost 바인딩, 외부 텍스트의 로컬 LLM 프롬프트 인젝션 격리(시스템 프롬프트 분리·도구권한 차단)"
+    ],
+    "quantitative_gates": {
+      "calibration_ece_max": 0.10,
+      "direction_accuracy_min": "벤치마크(buy&hold·랜덤) 대비 +3%p 이상 & 부트스트랩/DM p<0.05",
+      "cost_adjusted_excess_return": "거래세·수수료·슬리피지 반영 후 벤치마크 초과(>0) & Sharpe 우위",
+      "walkforward_min_sample": "OOS 총 ≥250 거래일, 폴드 ≥5, 다중검정 보정(BH)",
+      "pilot_pass": "결합 피처가 감성단독·벤치마크 동시 상회 + 위 임계 충족 시에만 본예측 활성, 미달 시 요약/감성추세만 제공",
+      "note": "수치는 잠정 — 파일럿 결과로 보정. 미달 시 '예측 비신뢰' 강등"
+    },
+    "user_stories": [
+      {"id":"US1","title":"아침에 시장 방향 한눈에","priority":"high","acceptance_criteria":["상단 게이지에 단/중기 방향+확률%+신뢰도(ECE 기반) 표시","ECE>0.10 또는 파일럿 미통과 시 '예측 비신뢰' 배지+예측 비활성"]},
+      {"id":"US2","title":"텔레그램으로 뉴스 던지기","priority":"high","acceptance_criteria":["허용발신자 메시지만 수용, 5분 내 감성 입력 반영","스팸/중복(해시 일치)·미허용 발신자는 검토 큐/거부"]},
+      {"id":"US3","title":"종목 밸류 확인","priority":"high","acceptance_criteria":["종목코드 입력 시 PIT 재무 기반 밸류 카드(상대 멀티플+간이 DCF)","결측·정정공시 시 '평가 불가/주의 사유' 명시"]},
+      {"id":"US4","title":"신호 신뢰도 확인(백테스트)","priority":"high","acceptance_criteria":["리포트에 방향정확도·벤치 대비(p값)·비용반영 수익곡선·ECE 표시","quantitative_gates 미충족 시 예측 비활성·요약만"]}
+    ]
+  },
+  "architecture": {
+    "system_context": "단일 로컬 머신(Mac Studio) 개인용. 외부: pykrx/KRX, DART OpenAPI, 뉴스 RSS/API, 텔레그램 Bot API, Opus/Gemini API. 내부 저장 로컬 임베디드 DB. 대시보드는 localhost 바인딩. 타임존 = Asia/Seoul(KST) 고정.",
+    "time_semantics": {
+      "timezone": "KST 고정, 저장은 UTC+offset 명시",
+      "trading_calendar": "KRX 거래일/휴장일 캘린더 모듈로 영업일 매핑",
+      "as_of_rule": "뉴스=발행시각, 재무=DART 공시시각 기준 PIT. 장중/장후 컷오프로 다음 거래일 매핑",
+      "restatement": "정정공시·재무 restatement는 원시점 값 고정 + 정정시점 새 스냅샷 추가(버전)",
+      "corporate_actions": "액면분할·거래정지·상폐는 수정주가·플래그로 처리"
+    },
+    "data_schema": {
+      "prices": "PK(code,date), OHLCV+adj_close, source, ingested_at",
+      "financials": "PK(code,disclosure_dt,version), 항목·단위(KRW), pit_valid_from",
+      "news": "PK(id), url_hash(중복제거), published_at, source, sentiment_score, sentiment_label",
+      "telegram_notes": "PK(id), sender_id(allowlist), received_at, trust_tag, ticker_tags",
+      "signals": "PK(asof,horizon), dir, prob, strength, pct(calibrated), model_version",
+      "backtest_reports": "PK(run_id), period, accuracy, excess_return, sharpe, ece, p_value"
+    },
+    "modules": [
+      {"name":"calendar","purpose":"KRX 거래일/타임존","interfaces":["next_trading_day(ts)→date","is_open(ts)→bool"],"errors":["CalendarUnavailable"]},
+      {"name":"ingestion","purpose":"수집·정규화·중복제거·PIT 스탬프","interfaces":["fetch_prices(codes,date)→OHLCV|SourceError(timeout=10s,retry≤3)","fetch_financials(code)→PIT재무","fetch_news(since)→articles[]","ingest_telegram(msg)→note|Rejected"],"idempotency":"(code,date)/url_hash 키"},
+      {"name":"sentiment","purpose":"로컬 LLM 감성·요약","interfaces":["score_sentiment(text[])→{score,label}[]|LLMError(timeout,repeat_penalty,max_tokens)","summarize(text[])→summary"]},
+      {"name":"features","purpose":"결합 피처·PIT 정렬","interfaces":["build_features(asof)→feature_frame(스키마 고정)"]},
+      {"name":"router","purpose":"로컬/API 라우팅·비용캡","interfaces":["route(task)→engine(매핑표: valuation·market_synthesis→API, else local)","check_budget()→remaining(초과 시 force_local)"]},
+      {"name":"signal","purpose":"분류 확률·강도·캘리브레이션·포지션","interfaces":["predict(feature_frame,horizon)→{dir,prob,strength,pct}","calibrate(prob)→pct(Platt/Isotonic)","to_position(prob)→weight(한도·룰)"]},
+      {"name":"backtest","purpose":"walk-forward·거래비용·벤치","interfaces":["run_walkforward(strategy,period)→report(거래세+수수료+슬리피지)","pilot_gate(metrics)→pass|fail(quantitative_gates)"]},
+      {"name":"valuation","purpose":"종목 밸류에이션","interfaces":["valuate(code)→{multiples,dcf,verdict}|DataMissing"]},
+      {"name":"telegram","purpose":"인입·알림","interfaces":["on_message(msg)→note|Rejected(allowlist)","send_daily_brief(report)"]},
+      {"name":"dashboard","purpose":"한눈 요약+드릴다운(localhost)","interfaces":["GET /api/market→{short,mid,confidence}","GET /api/stock/{code}","GET /api/backtest"]},
+      {"name":"storage","purpose":"PIT 저장(SQLite/DuckDB)","interfaces":["upsert(entity,row)","select(entity,filter)","snapshot(asof)"],"constraints":"data_schema의 PK·제약 준수"},
+      {"name":"orchestrator","purpose":"스케줄·멱등·재시도","interfaces":["run_daily_pipeline()","retry(task,≤3)"]},
+      {"name":"monitoring","purpose":"드리프트·비용","interfaces":["track(metric)","alert(rule: 분포변화·비용캡·ECE 악화)"]}
+    ],
+    "pilot_design": {
+      "label": "다음 거래일 지수 종가 방향(상승/하락)",
+      "features_compared": "감성 단독 vs 감성+가격/거래량/변동성 결합",
+      "split": "walk-forward, OOS ≥250일/폴드≥5, 학습-평가 분리",
+      "significance": "부트스트랩 또는 Diebold-Mariano p<0.05 + BH 다중검정 보정",
+      "fallback": "미통과 시 본예측 비활성, 요약·감성추세만"
+    },
+    "governance": {
+      "legal": "개인 1인 비공개. 외부 배포·타인 알림 금지(유사투자자문 경계 회피). 본구현 전 자본시장법·뉴스 본문/ pykrx·KRX·DART 약관·재배포 제약 검토 결과를 전제로 기록",
+      "disclaimer": "모든 화면·알림에 '투자권유 아님, 참고용' 고지"
+    }
+  }
+}

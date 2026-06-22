@@ -1,0 +1,6 @@
+{
+  "audit": "1->2 (Blueprint vs PRD/Architecture)",
+  "score": 9,
+  "blockers": [],
+  "note": "전 컴포넌트가 모듈/요구로 매핑됨. 추가된 calendar 모듈은 point-in-time 요구의 지원 인프라로 범위 내. PRD가 blueprint를 정량화·강화하며 모순 없음."
+}
