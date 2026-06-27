@@ -201,6 +201,33 @@ Three things are genuinely new; the rest is Build-mode machinery reused at small
 
 ---
 
+## Part 2.7. Evaluation — "design realization" acceptance grading + longitudinal trend
+
+So far factory covered **building** and **fixing**, but it had no step that actually grades **"how much of the design the build realized."** Evaluation fills that gap. End of Build (Stage 6) · end of Maintain (M6 delta) · anytime (`/factory evaluate`) — **one grading engine, three triggers**.
+
+**Why this is tricky — the self-praise trap**
+If factory calls its own code "9/10, excellent," that's just the overconfidence bias this skill *exists to prevent* (②·③), dressed up as a score. So two things are mandatory:
+1. **Grading is done by a separate Opus subagent, not the current session** (same principle as the Stage 1 critic — no self-grading).
+2. **Every score is anchored to an evidence path.** A score given on "impression" is void (Red Flag).
+
+**Four axes (each 0–10, evidence required)**
+| Axis | What it measures | Evidence source |
+|----|------------|----------|
+| Requirements met | ratio of Stage 2 requirements·acceptance criteria proven by tests | test/run logs |
+| Design conformance | code ↔ stage3_design drift (← **reuses the M1 drift detector**) | justified if an ADR explains it, penalized otherwise |
+| Verification strength | acceptance-criteria test coverage + build/type/lint | reuses Stage 5 verification evidence |
+| Risk handling | high-risk decisions' High-Risk Review pass·outstanding must_fix | stage3_highrisk_review.json |
+
+**The point — the verdict is a "realization," not a number**
+The overall result isn't one weighted-average number but a **realized / partially-realized / diverged** verdict + a per-axis table. It reframes the subjective "did it get better than the initial design?" into the measurable **"what % of the design was realized, and with what evidence?"**
+
+**Longitudinal trend**
+Each evaluation appends one line to `_run/eval_history.jsonl` → every Maintain fix yields a **delta vs. the previous** (improved/unchanged/regressed). Quality can regress even when tests pass (separate from the M4 regression guard), so if any axis drops, it's reported to the user.
+
+> Analogy: if Build·Maintain are "constructing and renovating," Evaluation is the **final inspection + the periodic-inspection log**. An inspector (the separate subagent) grades the real thing against the blueprint with evidence, and that log accumulates to show whether the building got better or worse over time.
+
+---
+
 ## Part 3. The full picture — before vs. after hardening
 
 ```

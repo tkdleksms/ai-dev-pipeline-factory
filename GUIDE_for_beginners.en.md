@@ -97,6 +97,20 @@ Your job is the same as when building — **just the direction**: to "I'll chang
 
 ---
 
+## Checking it was built right, with a score (Evaluation)
+
+Once it's built, you naturally wonder "did this actually turn out the way I first intended?" After finishing, factory produces a **scorecard for itself (EVALUATION.md)**. You can also call it anytime:
+```
+/factory evaluate
+```
+One important point — **if you grade your own work, you grade generously.** So the grading is done by a **different AI (a separate grader)**, and every score comes with **"the evidence for why"** (which tests passed, etc.) attached. A score with no evidence is void.
+
+The grading looks at four things: ① do the features you wanted actually all work, ② was it built the way it was originally designed, ③ is it confirmed by tests, ④ were the risky parts handled well. And the result isn't "an N-out-of-10 code" but **"how much of the design got realized"** (done / partially done / drifted off).
+
+Another nice part — every time you fix it with Maintain, it records **whether the score went up or down vs. last time** (the trend), so if a fix actually made something worse, it tells you.
+
+---
+
 ## A real example (already built)
 
 On this account, calling `/factory Korean webnovel creation system`:

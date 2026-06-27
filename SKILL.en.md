@@ -1,6 +1,6 @@
 ---
 name: factory
-description: An autonomous development pipeline that takes a non-developer from a vague idea to a finished product. Stage 0 scores idea concreteness (0-100) and asks clarifying questions if it falls short, then designs through 5 stages (Profile -> Blueprint -> PRD -> Design -> Verify) and autonomously implements in the same session. Beyond Build mode, it offers a Maintain mode for evolving existing projects (code<->design drift reconciliation, blast-radius scoping, regression guard). Includes risk-based adaptive depth (lite/standard/fortified), crash recovery (resume), run observability (telemetry/RUN_REPORT), cross-stage consistency audits, anti-rationalization guardrails, evidence-based verification, high-risk adversarial review, source-driven decisions, and ADR documentation discipline. No external plugin dependency (critique uses Opus 4.8).
+description: An autonomous development pipeline that takes a non-developer from a vague idea to a finished product. Stage 0 scores idea concreteness (0-100) and asks clarifying questions if it falls short, then designs through 5 stages (Profile -> Blueprint -> PRD -> Design -> Verify) and autonomously implements in the same session. Beyond Build mode, it offers a Maintain mode for evolving existing projects (code<->design drift reconciliation, blast-radius scoping, regression guard) and an Evaluation acceptance scorecard (a separate adversarial subagent grades design conformance / requirements-met against evidence, with a longitudinal trend). Includes risk-based adaptive depth (lite/standard/fortified), crash recovery (resume), run observability (telemetry/RUN_REPORT), cross-stage consistency audits, anti-rationalization guardrails, evidence-based verification, high-risk adversarial review, source-driven decisions, and ADR documentation discipline. No external plugin dependency (critique uses Opus 4.8).
 ---
 
 # Factory
@@ -14,6 +14,7 @@ A workflow that takes a user's rough idea, produces high-quality design artifact
 - `/factory` — if no argument, asks the user for an idea
 - `/factory resume [<project_slug>]` — continue an interrupted run. If slug is omitted, list resumable projects (see "Run State & Resume" below)
 - `/factory maintain [<project_slug>] <change request>` — make a scoped change (bugfix/feature/refactor) to an existing project. If slug is omitted, targets the current directory (see "Maintain Mode" below)
+- `/factory evaluate [<project_slug>]` — score the product (code) against its design, evidence-based. Runs standalone anytime (see "Evaluation & Scorecard" below)
 
 ## Execution Mode (hybrid)
 - **Stage 0, 1**: requires user confirmation (asks for edits/approval)
@@ -284,6 +285,12 @@ If implementation reveals the design (Stage 2/3) is wrong, do not quietly take a
 - A task with no tests written **must not be declared complete** (Red Flag).
 - If an environment constraint prevented verification, never record a guessed pass — explicitly mark it **"unverified — reason"** and report it to the user.
 
+### Stage 6 — Evaluation (automatic, acceptance scorecard)
+Once implementation is done, score **how much of the design the build actually realized**, with evidence. (Axes and outputs detailed under "Evaluation & Scorecard" below.)
+- A **separate Opus subagent** grades it (no self-grading — same principle as the Stage 1 critic). The current session never assigns the scores itself.
+- Produce 4 axes (requirements-met·design conformance·verification strength·risk handling), each with **a score + evidence path** → generate `EVALUATION.md`, append the first entry (`trigger:"build"`) to `_run/eval_history.jsonl`.
+- Log an `evaluation` event to `metrics.jsonl`. The verdict is not a subjective "is the code good" grade but a **"design realization"** verdict.
+
 ## Maintain Mode (maintenance + feature evolution track)
 
 Beyond **Build mode** (greenfield 0→1, Stages 0–5), factory has a **Maintain mode** for applying a **scoped change** (bugfix/feature/refactor/perf/security) to an existing project. Invocation: `/factory maintain [<project_slug>] <change request>`.
@@ -328,6 +335,12 @@ Design just the change: `change_summary`, modified/new `interface_contracts[]`, 
 - Append an entry to the **Maintenance Log** in `SUMMARY.md`: `- <YYYY-MM-DD> [<change_type>/<profile>] <summary> — tests <pass/fail>, ADR <added/superseded or none>`.
 - Generate `maint/<change_id>_report.md` (mini report) + KB Harvest (0–2 reusable lessons). Log a `maint_done` event to `metrics.jsonl`.
 
+### M6 — Delta Evaluation (automatic)
+After the change, re-run the same scorecard (see "Evaluation & Scorecard") to compute the **delta vs the previous evaluation**.
+- Compare against the last entry in `_run/eval_history.jsonl` → per-axis score change + an **improved/unchanged/regressed** verdict. Append a new entry (`trigger:"maintain"`, `change_id`).
+- If any axis **drops (regresses)**, report to the user separately from the M4 test regression guard (a quality regression ≠ tests passing). Log an `evaluation` event to `metrics.jsonl`.
+- Append the score delta to the `SUMMARY.md` Maintenance Log line.
+
 ## Run State & Resume (crash recovery)
 
 A long autonomous run can be cut short by context exhaustion or interruption. Factory **checkpoints run state to disk** at every stage boundary, so a new session can continue from where it stopped.
@@ -370,8 +383,33 @@ Make the run's quality and cost visible (portfolio demo + regression check).
 - `resume` (`{from_stage}`)
 - `drift` (`{found, area}`) — Maintain M1 reconciliation result
 - `maint_done` (`{change_id, change_type, profile, regression_ok}`) — Maintain completion
+- `evaluation` (`{trigger, scores:{req,conformance,verification,risk}, realization, verdict}`) — Stage 6 / M6 / on-demand scoring result
 
 **Final report**: at the very end, generate `RUN_REPORT.md` (see "RUN_REPORT.md Template" below) by aggregating metrics.jsonl. SUMMARY.md centers on *results*, RUN_REPORT.md on *process/cost metrics*, cross-linked.
+
+## Evaluation & Scorecard (acceptance evaluation + longitudinal trend)
+
+Score "how much of the design the code actually realized," with evidence. Stage 6 (end of Build), Maintain M6 (post-change delta), and `/factory evaluate` (on-demand) all share **one engine**.
+
+> **Philosophy guard (most important)**: if factory praises its own code, that's merely the self-critique bias / false completion this skill exists to prevent, dressed up as a score. So grading **must be done by a separate Opus subagent** (reusing the Critique Pattern, `ARTIFACT_TYPE`="built product vs design+PRD"), and **every score must be anchored to actual evidence (test results·files·logs) paths, not vibes**. A score with no evidence is void (Red Flag).
+
+**Evaluation axes (each 0–10, evidence path required)**
+| Axis | Measure (evidence source) |
+|------|------|
+| **Requirements met** | report **structural coverage** (does implementing code/tests exist per requirement, N/total) and **acceptance proven** (did the quantitative gates / `acceptance_criteria` actually pass with run evidence) **separately**. If structure exists but the acceptance gate (e.g. accuracy/threshold) has no evidence, record "structural N/total · acceptance unproven" and do not count it as met (never infer met from file/test *names* alone) |
+| **Design conformance** | code ↔ `stage3_design` match — **reuse the Maintain M1 drift detector**. Per drift: justified if explained by an ADR, penalized if unexplained |
+| **Verification strength** | acceptance-criteria test coverage + build/type/lint pass (reuse Stage 5 Verification Evidence). **If tests can't be re-run live** (the eval environment lacks the runtime/deps), fall back to documented evidence (`.pytest_cache` lastfailed · SUMMARY/TODO records) but **lower the confidence one notch and say so** |
+| **Risk handling** | high-risk decisions' High-Risk Review pass + outstanding must_fix count (`stage3_highrisk_review.json`) |
+
+- The verdict isn't a single weighted-average number but a **"design realization" verdict** (realized / partially-realized / diverged) + a per-axis table. The process narrative (idea 45→ready, critic 5→8) is cited from RUN_REPORT.
+- **Profile-linked**: always one grading pass. fortified adversarially re-checks the single lowest-scoring axis.
+
+**Outputs**
+- `EVALUATION.md` — scorecard (per-axis score + evidence) + a **trend table** (see "EVALUATION.md Template"). Refreshed at each evaluation.
+- `_run/eval_history.jsonl` — one line appended per evaluation: `{ts, trigger:"build|maintain|ondemand", change_id?, scores:{req,conformance,verification,risk}, realization}`. The single source for the trend.
+- delta (M6): per-axis change vs the previous entry + improved/unchanged/regressed verdict. Report to the user on a regression.
+
+`/factory evaluate [<slug>]`: identify the project as in M0 → run the scorecard once (`trigger:"ondemand"`). **If `_run/` doesn't exist** (pre-telemetry / external project), **create it first** and start `eval_history.jsonl`. For an external repo with no artifacts, the design baseline is weak, so state that limitation.
 
 ## Source-Driven Decisions (no guessing — sources first)
 **Before deciding on or writing code against** any library/framework/API/external dependency, check the actual source instead of relying on memory. (Applies throughout Stage 2 architecture, Stage 3 design, and Stage 5 implementation.)
@@ -420,6 +458,7 @@ During autonomous execution, **reject all** of the following excuses if they com
 | "I already know the library version/API, no need to check" | ❌ No guessing. If uncertain, check the actual file/docs before deciding. |
 | "It's the lite profile, so skip whole stages/audits" | ❌ The profile reduces **depth only**. lite still runs all of Stages 0–5 and the audits (only the counts shrink). |
 | "It's a maintenance change, so skip the drift audit / design update" | ❌ Planning on stale design without code<->design reconciliation breaks the change. M1·M5 are mandatory (only the scope is limited). |
+| "I'll (the current session) score the evaluation myself" / "9/10, roughly, no evidence" | ❌ Self-grading is self-critique bias. Grading goes to a separate Opus subagent, every score anchored to an evidence path. |
 
 ## Red Flags (signs you're going wrong — fix immediately)
 - Blueprint has only 1 `component` -> insufficient decomposition, rewrite
@@ -432,6 +471,8 @@ During autonomous execution, **reject all** of the following excuses if they com
 - Profile mismatched with risk_tier (risk=high but lite) -> reselect (when in doubt, one level higher)
 - In Maintain, editing a file **outside** the M2 blast radius -> scope creep, stop and re-scope (or report to the user)
 - In Maintain, claiming regression tests pass with no pre-change baseline -> violates the M4 regression guard, record the baseline first
+- An Evaluation score with no evidence path (subjective impression) -> void, anchor the evidence and re-grade
+- The current session self-grading the Evaluation -> re-run via a separate Opus subagent
 
 ## Rules
 - **Every critique is delegated via the `Agent` tool to a general-purpose subagent** (`general-purpose` + `model="opus"`) — both inside TCI loops and for cross-stage consistency. Use the built-in prompt from "Critique Pattern" above. No self-critique, no external plugin dependency.
@@ -447,7 +488,7 @@ During autonomous execution, **reject all** of the following excuses if they com
 
 ## Output
 - **At the end of each stage**: a 3-5 line summary of key decisions + saved file paths
-- **At the very end**: the `SUMMARY.md` (results) + `RUN_REPORT.md` (process/cost metrics) paths + implementation results + suggested next actions
+- **At the very end**: the `SUMMARY.md` (results) + `RUN_REPORT.md` (process/cost metrics) + `EVALUATION.md` (acceptance scorecard·trend) paths + implementation results + suggested next actions
 
 ## SUMMARY.md Template
 ```markdown
@@ -464,6 +505,7 @@ During autonomous execution, **reject all** of the following excuses if they com
 - **Stage 3 Design**: <N> modules, <N> implementation steps, <N> ADRs (see `adr/`)
 - **Stage 4 Verify**: <N> tests, <N> gates
 - **High-Risk Review**: <ran? / verdict / must_fix count> (if any high-risk ADRs)
+- **Stage 6 Evaluation**: design realization <realized|partial|diverged>, requirements met <N/total> (see `EVALUATION.md`)
 
 ## Consistency Audit Results
 - 1->2: <score>, blockers: <count>
@@ -525,4 +567,33 @@ Generated by aggregating `_run/metrics.jsonl` (process/cost visibility — for p
 - resume: <count or none>
 
 -> See `SUMMARY.md` for the results summary.
+```
+
+## EVALUATION.md Template
+The separate Opus subagent's evidence-based scoring. Refreshed at each evaluation (Stage 6 / Maintain M6 / on-demand), accumulating a longitudinal trend. Every score is anchored to an evidence path.
+```markdown
+# Evaluation — <project_name>
+
+> Graded by: separate Opus subagent · latest: <YYYY-MM-DD> (<build|maintain|ondemand>)
+> Design realization: **<realized | partially-realized | diverged>**
+
+## Scorecard (latest)
+| Axis | Score | Basis (evidence path) |
+|------|------|------|
+| Requirements met | <N/total> | <tests/logs proving met + unmet list> |
+| Design conformance | <0-10> | <code↔stage3_design drift list + ADR-explained?> |
+| Verification strength | <0-10> | <test coverage + build/type/lint results> |
+| Risk handling | <0-10> | <High-Risk verdict + outstanding must_fix count> |
+
+## Trend (aggregated from eval_history.jsonl)
+| Point | trigger | Req | Conf | Verif | Risk | Verdict |
+|------|---------|------|--------|------|------|------|
+| v1 (build) | build | <..> | <..> | <..> | <..> | baseline |
+| <date> <change> | maintain | <..>(<±Δ>) | <..> | <..> | <..> | <improved/unchanged/regressed> |
+
+## Process narrative (reference — cited from RUN_REPORT)
+- idea concreteness 45->ready, design critic <initial>-><final>
+
+## Recommendations
+- <concrete improvement for the lowest-scoring axis>
 ```
