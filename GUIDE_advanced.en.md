@@ -137,6 +137,70 @@ If the design changes, the old ADR isn't overwritten — it's marked "superseded
 
 ---
 
+## Part 2.5. Four operational enhancements — "survive interruption, don't over-do it, make it visible"
+
+> If the 7 above are *quality* rules, these 4 are about **actually running** factory in practice.
+> Two small primitives (**Pipeline Profile**, **Run State**) solve all four at once.
+
+### Ⓐ Pipeline Profile — risk-proportional depth (prevents over/under-ceremony)
+
+**Problem:** running full ceremony (3 critique rounds + 3 audits + high-risk review) on a one-line tool is waste. Conversely, reviewing a payment system shallowly is an accident.
+**Fix:** at Stage 0, pick one profile by risk level and auto-tune the depth of later stages.
+
+```
+lite      (low-risk, small) : 1 review round, audits merged into 1, slice critique skipped
+standard  (default)         : 3 review rounds, audits each       (= original behavior)
+fortified (high-risk)       : 3 rounds + re-audit, forced high-risk review, every slice critiqued
+```
+
+> Key: the profile reduces **depth only**. lite still goes through all of Stages 0-5 (it never skips a stage). A completely different concept from "it's simple, let's skip it" (Anti-Rationalization).
+
+### Ⓑ Resume — crash recovery
+
+**Problem:** a long autonomous run cut short by context exhaustion/interruption means starting over.
+**Fix:** checkpoint progress to `_run/state.json` at every stage boundary -> `/factory resume` continues from where it stopped (never re-runs completed stages).
+
+> Analogy: a game's autosave. It writes how far you got to disk, so even after a power-off you start from that point.
+
+### Ⓒ Run Telemetry / RUN_REPORT — observability
+
+**Problem:** after a run, "how much review happened and what did it cost" is invisible.
+**Fix:** log key events (critique scores, audits, subagent call counts, etc.) one line at a time to `_run/metrics.jsonl`, then aggregate into `RUN_REPORT.md` at the end.
+
+> SUMMARY.md = *what was built* (results) / RUN_REPORT.md = *how / at what cost it was built* (process, cost).
+> For a portfolio, it shows "what this pipeline actually did" in numbers.
+
+### Ⓓ Stage 5 hardening — "the last mile"
+
+**Problem:** the design stages are meticulous, but implementation was just "thin slices + evidence," comparatively loose.
+**Fix:** profile-linked per-slice critique + integration-test checkpoints at module boundaries + an **implementation->design feedback loop** (on finding a design defect mid-build, don't quietly diverge — add an ADR, patch the design, re-review if needed).
+
+---
+
+## Part 2.6. Maintain mode — "factory after the first release"
+
+> Everything above is **Build mode** (greenfield 0→1). But in practice you finish a build and then keep tweaking it with Claude Code — and factory had nothing to say about that phase. `/factory maintain` fills it.
+
+**The core problem it solves — drift.** Every hand-edit after the build pushes the **actual code** away from the **design docs** (`stage3_design.json`, ADRs). If a later change plans against those stale docs, it plans against a fiction. So Maintain mode's first real step (M1) is to **read the actual code and reconcile it** with the design — but only in the area the change touches, never the whole project.
+
+```
+M0 Locate & Load    : find the project, load its artifacts (or onboard a generic repo)
+M1 Reconcile  ⭐     : diff real code vs. design docs in the touched area -> drift list -> fix ADRs
+M2 Scope            : classify the change, fix its blast radius, pick a profile  (you confirm)
+M3 Change Design    : mini TCI for just this change (contracts, ADRs, test delta, regression risk)
+M4 Implement  ⭐     : thin slices within the blast radius + regression guard on existing tests
+M5 Update + Harvest : patch design docs, append a Maintenance Log line, harvest KB
+```
+
+Three things are genuinely new; the rest is Build-mode machinery reused at smaller scale:
+- **M1 drift reconciliation** — the exact gap in the "build once, hand-edit forever" workflow.
+- **M2 blast-radius scoping** — touch only what the change needs; nothing outside the set.
+- **M4 regression guard** — record a baseline of affected tests *before* the change, re-run them after each slice so you can't silently break existing behavior.
+
+> Analogy: Build mode is constructing the house. Maintain mode is a renovation — you first check what was actually built (vs. the original blueprint), wall off just the room you're touching, and make sure the plumbing elsewhere still works when you're done.
+
+---
+
 ## Part 3. The full picture — before vs. after hardening
 
 ```
@@ -165,7 +229,9 @@ If the design changes, the old ADR isn't overwritten — it's marked "superseded
 | Apps/tools where structure matters | One-off scripts |
 | Things you'll maintain later | Throwaway prototypes |
 
-Using factory on a small task becomes **excessive process**. It's suited for "build it properly, use it for a long time."
+Using factory on a small task becomes **excessive process**. It's suited for "build it properly, use it for a long time." (That said, the **lite profile** makes the process much lighter for small/low-risk projects — see Part 2.5 Ⓐ.)
+
+Note the table above is about **Build mode** (0→1). Once a project exists, ongoing bugfixes and feature additions go through **Maintain mode** (`/factory maintain`, Part 2.6) instead — which is itself profile-scaled, so a small fix stays a lite-weight pass.
 
 ---
 

@@ -80,6 +80,23 @@ Or just type `/factory` with nothing after it, and it asks "what should I build?
 
 ---
 
+## When you want to change it after building (Maintain mode)
+
+An app isn't built once and done. As you use it, "add one more button here," "fix this bug" keep coming up. For that:
+```
+/factory maintain add a button to toggle dark mode
+```
+Calling it this way puts factory into **fix-it mode**. Instead of rebuilding from scratch, it's a flow for **safely tweaking an app that already exists**.
+
+What factory does on its own here (in plain terms):
+1. **It reads what the code actually is right now first** — if you've hand-edited things since, the code has drifted from the original design notes, and it reconciles that gap first. *(This is the key part — fixing against stale design notes makes you touch the wrong place.)*
+2. **It decides only what to touch** — for "dark mode," just the screen-theme area. It leaves the parts that work alone.
+3. **After fixing, it re-checks that what used to work still works** — it verifies with tests that existing features didn't break, not just the new thing.
+
+Your job is the same as when building — **just the direction**: to "I'll change this part like so, shall I proceed?" you answer "yes" or "not like that, like this." (If the change is low-risk the process stays light; if it's risky like auth or payments, it gets more thorough — it scales the rigor for you.)
+
+---
+
 ## A real example (already built)
 
 On this account, calling `/factory Korean webnovel creation system`:
